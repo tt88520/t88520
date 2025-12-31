@@ -135,7 +135,15 @@ class _VideoPageState extends State<VideoPage> {
     setState(() {
       _currentEpisodeIndex = index;
       final url = _episodes[index]['url']!;
-      _isDirectLink = url.contains('.m3u8') || url.contains('.mp4') || url.contains('http');
+      
+      final lowerUrl = url.toLowerCase();
+      // 更加精准的直链判断逻辑
+      _isDirectLink = lowerUrl.contains('.m3u8') || 
+                      lowerUrl.contains('.mp4') || 
+                      lowerUrl.contains('.flv') ||
+                      lowerUrl.contains('.mkv') ||
+                      lowerUrl.contains('playlist.m3u8');
+      
       if (_isDirectLink) {
         _initVideoPlayer(url);
       } else {
@@ -146,7 +154,17 @@ class _VideoPageState extends State<VideoPage> {
   }
 
   void _initVideoPlayer(String url) async {
-    await _player.open(Media(url));
+    // 针对 PC 端优化：添加 UserAgent 和 Referer
+    await _player.open(
+      Media(
+        url,
+        httpHeaders: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Referer': url.split('?')[0],
+        },
+      ),
+    );
+    
     final prefs = await SharedPreferences.getInstance();
     final progressKey = 'progress_${widget.videoId}_${_currentSourceIndex}_${_currentEpisodeIndex}';
     final savedSeconds = prefs.getInt(progressKey) ?? 0;
@@ -251,7 +269,7 @@ class _VideoPageState extends State<VideoPage> {
                     errorBuilder: (c, e, s) => const Text('唐人街影院', style: TextStyle(color: Colors.red, fontSize: 18, fontWeight: FontWeight.bold)),
                   ),
                   const SizedBox(height: 4),
-                  const Text('v1.9 - MediaKit', style: TextStyle(color: Colors.amber, fontSize: 10, fontWeight: FontWeight.bold)),
+                  const Text('v1.9 - PC Fix', style: TextStyle(color: Colors.amber, fontSize: 10, fontWeight: FontWeight.bold)),
                 ],
               ),
             ),
