@@ -38,6 +38,10 @@ class _VideoPageState extends State<VideoPage> {
   bool _isFullScreenMode = false;
   String _announcement = '';
   Timer? _hideTimer;
+  
+  // 调试日志记录
+  String _debugInfo = "等待播放...";
+  String _lastError = "";
 
   late final Player _player = Player();
   late final VideoController _videoController = VideoController(_player);
@@ -48,6 +52,25 @@ class _VideoPageState extends State<VideoPage> {
     super.initState();
     _currentSourceIndex = widget.initialSourceIndex ?? 0;
     _currentEpisodeIndex = widget.initialEpisodeIndex ?? 0;
+    
+    // 监听播放器日志和错误
+    _player.stream.error.listen((error) {
+      print("播放器报错: $error");
+      setState(() => _lastError = error.toString());
+    });
+    
+    _player.stream.completed.listen((completed) {
+      print("播放状态改变: ${completed ? '已完成' : '播放中'}");
+    });
+
+    _player.stream.buffering.listen((isBuffering) {
+      if (isBuffering) {
+        setState(() => _debugInfo = "正在缓冲数据...");
+      } else {
+        setState(() => _debugInfo = "缓冲完成，尝试开播");
+      }
+    });
+
     _fetchDetail();
     _fetchAnnouncement();
     _resetHideTimer();
@@ -131,22 +154,29 @@ class _VideoPageState extends State<VideoPage> {
 
   Future<void> _playEpisode(int index) async {
     await _player.stop();
+    setState(() => _lastError = ""); // 清除之前的错误
     WakelockPlus.enable();
     setState(() {
       _currentEpisodeIndex = index;
       final url = _episodes[index]['url']!;
       
       final lowerUrl = url.toLowerCase();
-      // 更加精准的直链判断逻辑
+      // 增加识别逻辑：包含 m3u8, mp4, flv, mkv 或是特定的直链特征
       _isDirectLink = lowerUrl.contains('.m3u8') || 
                       lowerUrl.contains('.mp4') || 
                       lowerUrl.contains('.flv') ||
                       lowerUrl.contains('.mkv') ||
-                      lowerUrl.contains('playlist.m3u8');
+                      lowerUrl.contains('playlist.m3u8') ||
+                      url.startsWith('http://') || url.startsWith('https://'); 
       
+      // 注意：如果某些源是单纯的网页地址，media_kit 会报错，此时应走 WebView
       if (_isDirectLink) {
+        print("检测到直链地址: $url");
+        setState(() => _debugInfo = "检测到直链，准备播放...");
         _initVideoPlayer(url);
       } else {
+        print("检测到解析地址，启用 WebView: $url");
+        setState(() => _debugInfo = "非直链，尝试网页解析...");
         _initWebView(url);
       }
     });
@@ -154,31 +184,35 @@ class _VideoPageState extends State<VideoPage> {
   }
 
   void _initVideoPlayer(String url) async {
-    // 针对 PC 端优化：添加 UserAgent 和 Referer
-    await _player.open(
-      Media(
-        url,
-        httpHeaders: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Referer': url.split('?')[0],
-        },
-      ),
-    );
-    
-    final prefs = await SharedPreferences.getInstance();
-    final progressKey = 'progress_${widget.videoId}_${_currentSourceIndex}_${_currentEpisodeIndex}';
-    final savedSeconds = prefs.getInt(progressKey) ?? 0;
-    if (savedSeconds > 0) {
-      _player.seek(Duration(seconds: savedSeconds));
-    }
-
-    _player.stream.position.listen((position) {
-      if (position.inSeconds > 5 && position.inSeconds % 5 == 0) {
-        prefs.setInt(progressKey, position.inSeconds);
-        _saveToHistory();
+    try {
+      await _player.open(
+        Media(
+          url,
+          httpHeaders: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Referer': url.split('?')[0],
+          },
+        ),
+      );
+      
+      final prefs = await SharedPreferences.getInstance();
+      final progressKey = 'progress_${widget.videoId}_${_currentSourceIndex}_${_currentEpisodeIndex}';
+      final savedSeconds = prefs.getInt(progressKey) ?? 0;
+      if (savedSeconds > 0) {
+        _player.seek(Duration(seconds: savedSeconds));
       }
-    });
-    setState(() {});
+
+      _player.stream.position.listen((position) {
+        if (position.inSeconds > 5 && position.inSeconds % 5 == 0) {
+          prefs.setInt(progressKey, position.inSeconds);
+          _saveToHistory();
+        }
+      });
+      setState(() {});
+    } catch (e) {
+      print("播放引擎初始化失败: $e");
+      setState(() => _lastError = "初始化失败: $e");
+    }
     _resetHideTimer();
   }
 
@@ -269,7 +303,7 @@ class _VideoPageState extends State<VideoPage> {
                     errorBuilder: (c, e, s) => const Text('唐人街影院', style: TextStyle(color: Colors.red, fontSize: 18, fontWeight: FontWeight.bold)),
                   ),
                   const SizedBox(height: 4),
-                  const Text('v1.9 - PC Fix', style: TextStyle(color: Colors.amber, fontSize: 10, fontWeight: FontWeight.bold)),
+                  const Text('v2.0 - Debug Mode', style: TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.bold)),
                 ],
               ),
             ),
@@ -416,8 +450,35 @@ class _VideoPageState extends State<VideoPage> {
                       ? WebViewWidget(controller: _webViewController!)
                       : const SizedBox()),
             ),
+            
+            // 调试日志层 (只在有错误或加载时显示)
+            if (_lastError.isNotEmpty || _player.state.buffering)
+              Positioned(
+                top: 60,
+                left: 20,
+                right: 20,
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  color: Colors.black54,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_lastError.isNotEmpty)
+                        Text("错误: $_lastError", style: const TextStyle(color: Colors.redAccent, fontSize: 14)),
+                      Text("当前状态: $_debugInfo", style: const TextStyle(color: Colors.greenAccent, fontSize: 12)),
+                      if (_episodes.isNotEmpty)
+                        Text("当前地址: ${_episodes[_currentEpisodeIndex]['url']}", 
+                          style: const TextStyle(color: Colors.white54, fontSize: 10),
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+
             if (_announcement.isNotEmpty)
               Positioned(top: 0, left: 0, right: 0, child: _buildMarquee()),
+              
             if (!_isLoading && _isDirectLink)
               Positioned(
                 bottom: 20, left: 40, right: 40,
