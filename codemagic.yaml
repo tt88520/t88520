@@ -1,0 +1,27 @@
+workflows:
+  windows-workflow:
+    name: Windows Release Build
+    instance_type: windows_x2
+    max_build_duration: 60
+    environment:
+      flutter: stable
+      groups:
+        - signing # 如果后续需要代码签名，可以在 Codemagic 后台配置组
+    scripts:
+      - name: Get Flutter packages
+        script: |
+          flutter pub get
+      - name: Build Windows
+        script: |
+          flutter build windows --release
+    artifacts:
+      - build/windows/runner/Release/*.exe
+      - build/windows/runner/Release/*.dll
+    publishing:
+      email:
+        recipients:
+          - user@example.com # 建议在 Codemagic 后台修改为您的邮箱
+        notify:
+          success: true
+          failure: true
+
