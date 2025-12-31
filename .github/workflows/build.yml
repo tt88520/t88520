@@ -7,14 +7,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
-          # 直接使用最新的稳定版渠道，不再写死版本号
-          channel: 'stable'
+          channel: stable
           cache: true
-      - run: flutter --version # 这一步可以帮我们确认到底安装了哪个版本
       - run: flutter config --enable-windows-desktop
       - run: flutter pub get
       - run: flutter build windows --release
-      - uses: actions/upload-artifact@v4
+      
+      # 使用更灵活的路径匹配，确保能抓到 .exe 和 .dll
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
         with:
           name: TV-PC-Version
-          path: build/windows/runner/Release/
+          path: |
+            build/windows/runner/Release/
+            build/windows/x64/runner/Release/
+          if-no-files-found: error
