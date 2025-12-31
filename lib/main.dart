@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:new_tv/pages/home_page.dart';
 import 'package:provider/provider.dart';
+import 'package:media_kit/media_kit.dart';
 
 void main() {
+  MediaKit.ensureInitialized();
   WidgetsFlutterBinding.ensureInitialized();
   // 强制横屏
   SystemChrome.setPreferredOrientations([
