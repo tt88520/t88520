@@ -98,8 +98,11 @@ class _HomePageState extends State<HomePage> {
       // 只要拿到了菜单数据，就认为连接成功
       if (_menus.length > 1) {
         _initTimer?.cancel();
-        setState(() => _isTimeout = false);
-        await _fetchContent();
+        setState(() {
+          _isTimeout = false;
+          _isLoading = false; // 获取到基础数据即关闭全屏连接提示
+        });
+        _fetchContent(); // 异步获取首页内容，不再阻塞界面展示
       } else {
         throw Exception("API Data Empty");
       }
@@ -371,7 +374,7 @@ class _HomePageState extends State<HomePage> {
 
     if (_isTimeout) return _buildErrorUI();
 
-    bool showSkeleton = _isLoading && _homeRows.isEmpty && _videoList.isEmpty && _currentMenuIndex == 0;
+    bool showSkeleton = _isLoading && _homeRows.isEmpty && _videoList.isEmpty && _currentMenuIndex == 0 && _menus.length <= 1;
 
     if (showSkeleton) {
       return const Center(
